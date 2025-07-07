@@ -1,83 +1,93 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
 from nltk.sentiment import SentimentIntensityAnalyzer
 import nltk
-import os
 import logging
-from langdetect import detect, LangDetectException
+from pydantic import BaseModel
+from sklearn.feature_extraction.text import TfidfVectorizer  # Optional placeholder
 
-# Only download if not available
+# Download VADER lexicon if not already present
 try:
     nltk.data.find('sentiment/vader_lexicon.zip')
 except LookupError:
     nltk.download('vader_lexicon')
 
-# Setup
-app = FastAPI()
-sia = SentimentIntensityAnalyzer()
-
-# Logging config
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 
-# CORS config
+# Initialize FastAPI app
+app = FastAPI()
+
+# Initialize sentiment analyzer
+try:
+    sia = SentimentIntensityAnalyzer()
+except Exception as e:
+    logging.error(f"Failed to initialize VADER SentimentIntensityAnalyzer: {e}")
+    raise RuntimeError("Sentiment Analyzer could not be initialized. Check nltk resources.")
+
+# Enable CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ✅ tighten for prod
+    allow_origins=["*"],  # Update this in production!
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Input model
-class TextInput(BaseModel):
+# Request schema for sentiment prediction
+class PredictRequest(BaseModel):
     text: str
 
-# Health check endpoint
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
-# Root message
 @app.get("/")
 def read_root():
     return {"message": "Moodify backend is up and running with VADER 🔥"}
 
-# Sentiment prediction
 @app.post("/predict")
-def analyze_sentiment(data: TextInput):
-    text = data.text.strip()
-
-    if not text:
-        raise HTTPException(status_code=400, detail="Text input is empty.")
-
-    # Language detection
+async def analyze_sentiment(payload: PredictRequest):
     try:
-        lang = detect(text)
-        if lang != "en":
-            raise HTTPException(status_code=422, detail="Please input English text only.")
-    except LangDetectException:
-        raise HTTPException(status_code=422, detail="Could not detect language.")
+        text = payload.text.strip()
+        logging.info(f"Incoming text: {text}")
 
-    # Analyze sentiment
-    logging.info(f"Analyzing sentiment for: {text}")
-    scores = sia.polarity_scores(text)
-    compound = scores['compound']
+        if not text:
+            raise HTTPException(status_code=400, detail="Text input is empty.")
 
-    if compound < -0.5:
-        mood = "Negative"
-    elif -0.5 <= compound < -0.2:
-        mood = "Mildly Negative"
-    elif -0.2 <= compound <= 0.2:
-        mood = "Neutral"
-    elif 0.2 < compound <= 0.5:
-        mood = "Mildly Positive"
-    else:
-        mood = "Positive"
+        # OPTIONAL: TF-IDF placeholder (if needed later)
+        tfidf = TfidfVectorizer()
+        tfidf_matrix = tfidf.fit_transform([text])
+        logging.info("TF-IDF features extracted (debug placeholder)")
 
-    return {
-        "text": text,
-        "mood": mood,
-        "score": compound,
-        "raw_scores": scores
-    }
+        # Perform sentiment analysis
+        scores = sia.polarity_scores(text)
+        compound = scores['compound']
+
+        if compound < -0.5:
+            mood = "Negative"
+        elif -0.5 <= compound < -0.2:
+            mood = "Mildly Negative"
+        elif -0.2 <= compound <= 0.2:
+            mood = "Neutral"
+        elif 0.2 < compound <= 0.5:
+            mood = "Mildly Positive"
+        else:
+            mood = "Positive"
+
+        return {
+            "text": text,
+            "mood": mood,
+            "score": compound,
+            "raw_scores": scores
+        }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Unexpected error in /predict: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error. Please try again later."}
+        )
