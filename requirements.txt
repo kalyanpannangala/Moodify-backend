@@ -1,8 +1,6 @@
 fastapi
 uvicorn
-nltk
-pydantic
-langdetect
 scikit-learn
-
-
+pandas
+joblib
+python-multipart
