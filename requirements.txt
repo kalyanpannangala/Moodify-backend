@@ -3,4 +3,6 @@ uvicorn
 nltk
 pydantic
 langdetect
+scikit-learn
+
 
